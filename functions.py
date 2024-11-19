@@ -4,6 +4,48 @@ import numpy as np
 import nltk
 import string
 import re
+from pandarallel import pandarallel
+from collections import Counter
+
+pandarallel.initialize(progress_bar=False)
+
+POS_TAGS = [
+    "CC",
+    "CD",
+    "DT",
+    "EX",
+    "FW",
+    "IN",
+    "JJ",
+    "JJR",
+    "JJS",
+    "LS",
+    "MD",
+    "NN",
+    "NNS",
+    "NNP",
+    "NNPS",
+    "PDT",
+    "POS",
+    "PRP",
+    "PRP$",
+    "RB",
+    "RBR",
+    "RBS",
+    "RP",
+    "SYM",
+    "TO",
+    "UH",
+    "VB",
+    "VBD",
+    "VBG",
+    "VBN",
+    "VBP",
+    "VBZ",
+    "WDT",
+    "WP",
+    "WP$",
+]
 
 
 # %%
@@ -66,11 +108,11 @@ def get_function_word_frequency(text: str):
         function_word: words.count(function_word)
         for function_word in ENGLISH_STOP_WORDS
     }
-    function_word_frequency = {
-        function_word: (count / total_num if total_num > 0 else 0)
-        for function_word, count in function_word_count.items()
-    }
-    return pd.Series(function_word_frequency)
+    # function_word_frequency = {
+    #     function_word: (count / total_num if total_num > 0 else 0)
+    #     for function_word, count in function_word_count.items()
+    # }
+    return pd.Series(function_word_count)
 
 
 def get_letter_frequency(text: str):
@@ -99,24 +141,41 @@ def get_num_double_quotes(text: str):
     return len(re.findall(r'"', text))
 
 
+def get_num_tokens(tokens: list[str], word: str):
+    return sum([1 for token in tokens if token.lower() == word])
+
+# %%
+def get_num_pos_tags(tokens: list[str]):
+    counts = Counter(tag for _, tag in nltk.pos_tag(tokens))
+    return pd.Series({tag: counts.get(tag, 0) for tag in POS_TAGS})
+
+
+# freq_pos_tags(nltk.word_tokenize("The Quick brown fox jumps over the lazy dog."))
+
+
+# %%
 def extract_features(data: pd.DataFrame):
     df = get_tokenized_data(data)
-    df["avg_num_chars_per_token"] = df["tokens"].apply(get_avg_num_token_chars)
-    df["num_chars"] = df["text"].apply(len)
-    df["num_sents"] = df["text"].apply(get_num_sentences)
-    df["num_alpha"] = df["text"].apply(get_num_alphabet)
-    df["num_punct"] = df["text"].apply(get_num_punctuation)
-    df["num_punct2"] = df["text"].apply(get_num_punctuation, n=2)
-    df["num_punct3"] = df["text"].apply(get_num_punctuation, n=3)
-    df["num_contractions"] = df["text"].apply(get_num_contractions)
-    df["num_parentheses"] = df["text"].apply(get_num_parentheses)
-    # df["num_single_quotes"] = df["text"].apply(get_num_single_quotes)
-    # df["num_double_quotes"] = df["text"].apply(get_num_double_quotes)
-    # df["num_whitespaces"] = df["text"].apply(get_num_whitespaces)
-    # df["parentheses_frequency"] = df["text"].apply(get_parentheses_frequency)
-    # df["emoticons_frequency"] = df["text"].apply(get_emoticons_frequency)
-    df["num_no_vowel_words"] = df["tokens"].apply(get_num_no_vowel_words)
-    df["avg_word_length"] = df["text"].apply(get_avg_word_length)
-    df = pd.concat([df, df["text"].apply(get_function_word_frequency)], axis=1)
-    df = pd.concat([df, df["text"].apply(get_letter_frequency)], axis=1)
-    return df.drop(["text", "tokens", "author"], axis=1)
+    df["avg_num_chars_per_token"] = df["tokens"].parallel_apply(get_avg_num_token_chars)
+    df["num_chars"] = df["text"].parallel_apply(len)
+    df["num_sents"] = df["text"].parallel_apply(get_num_sentences)
+    df["num_alpha"] = df["text"].parallel_apply(get_num_alphabet)
+    df["num_punct"] = df["text"].parallel_apply(get_num_punctuation)
+    df["num_punct2"] = df["text"].parallel_apply(get_num_punctuation, n=2)
+    df["num_punct3"] = df["text"].parallel_apply(get_num_punctuation, n=3)
+    df["num_contractions"] = df["text"].parallel_apply(get_num_contractions)
+    df["num_parentheses"] = df["text"].parallel_apply(get_num_parentheses)
+    # df["freq_question_mark"] = df["tokens"].parallel_apply(get_num_tokens, word="?")
+    # df["freq_he"] = df["tokens"].parallel_apply(get_num_tokens, word="he")
+    # df["freq_she"] = df["tokens"].parallel_apply(get_num_tokens, word="she")
+    # df["num_single_quotes"] = df["text"].parallel_apply(get_num_single_quotes)
+    # df["num_double_quotes"] = df["text"].parallel_apply(get_num_double_quotes)
+    # df["num_whitespaces"] = df["text"].parallel_apply(get_num_whitespaces)
+    df["parentheses_frequency"] = df["text"].parallel_apply(get_parentheses_frequency)
+    df["emoticons_frequency"] = df["text"].parallel_apply(get_emoticons_frequency)
+    df["num_no_vowel_words"] = df["tokens"].parallel_apply(get_num_no_vowel_words)
+    df["avg_word_length"] = df["text"].parallel_apply(get_avg_word_length)
+    df = pd.concat([df, df["text"].parallel_apply(get_function_word_frequency)], axis=1)
+    df = pd.concat([df, df["text"].parallel_apply(get_letter_frequency)], axis=1)
+    df = pd.concat([df, df["tokens"].parallel_apply(get_num_pos_tags)], axis=1)
+    return df.drop(["Unnamed: 0", "text", "tokens", "author"], axis=1)
