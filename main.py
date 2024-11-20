@@ -1,16 +1,20 @@
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, f1_score
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-from importlib import reload
-import nltk
-import functions as F
+import re
 import string
-from pandarallel import pandarallel
-from joblib import Parallel, delayed
+from collections import Counter
+from importlib import reload
 from itertools import chain
+
+import matplotlib.pyplot as plt
+import nltk
+import numpy as np
+import pandas as pd
+from joblib import Parallel, delayed
+from pandarallel import pandarallel
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.svm import SVC
+
+import functions as F
 
 # %%
 np.random.seed(42)
@@ -29,18 +33,34 @@ y_dev = dev_dataset["author"]
 y_test = test_dataset["author"]
 print(train_dataset.head())
 
+
+# %%
+TOP_K = 1000
+
+
+def get_top_k_words(data, k):
+    all_text = " ".join(data["text"].dropna().astype(str))
+    words = re.findall(r"\b\w+\b", all_text.lower())
+    word_counts = Counter(words)
+    top_k_words = word_counts.most_common(k)
+    return [word for word, _ in top_k_words]
+
+
+TOP_K_WORDS = get_top_k_words(train_dataset, TOP_K)
+
+
 # %%
 reload(F)
 train_data = {
-    "X": F.extract_features(train_dataset),
+    "X": F.extract_features(train_dataset, TOP_K_WORDS),
     "y": y_train,
 }
 dev_data = {
-    "X": F.extract_features(dev_dataset),
+    "X": F.extract_features(dev_dataset, TOP_K_WORDS),
     "y": y_dev,
 }
 test_data = {
-    "X": F.extract_features(test_dataset),
+    "X": F.extract_features(test_dataset, TOP_K_WORDS),
     "y": y_test,
 }
 
@@ -66,10 +86,12 @@ def perform_ablation(model, train_data, test_data, features, **kwargs):
 
 
 def plot_ablation_results(results, groups):
-    fig, ax = plt.subplots(figsize=(10, 10))
+    fig, ax = plt.subplots(figsize=(8, 8))
     xs = list(string.ascii_uppercase)[: len(groups)]
     labels = [f"{x}: {group}" for x, group in zip(xs, groups)]
     ax.axhline(y=results[0][0], color="lightgrey", linestyle="--")
+    print("f1 :", results[0][0])
+    print("acc:", results[1][0])
     ax.bar(xs, results[0], label=labels)
     ax.set_ylim(bottom=max(np.min(results) - 0.1, 0))
     ax.set_xticks(xs)
@@ -82,44 +104,57 @@ def plot_ablation_results(results, groups):
 features = {
     "None": [],
     "Average token length": ["avg_num_chars_per_token"],
-    "Total number of chars": ["num_chars"],
-    "Total number of sentences": ["num_sents"],
-    "Total number of alphabets": ["num_alpha"],
+    "Total number of contractions": ["num_contractions"],
+    "Count of each function word": [f"fn:{word}" for word in F.ENGLISH_STOP_WORDS],
+    # "Total number of chars": ["num_chars"],
+    # "Total number of sentences": ["num_sents"],
+    # "Total number of alphabets": ["num_alpha"],
     "Total number of punctuation marks": ["num_punct"],
     "Total number of double punctuation marks": ["num_punct2"],
     "Total number of triple punctuation marks": ["num_punct3"],
-    "Total number of contractions": ["num_contractions"],
-    "Total number of parentheses": ["num_parentheses"],
-    "Total number of emoticons": ["num_emoticons"],
-    "Total number of no-vowel words": ["num_no_vowel_words"],
-    "Average word length": ["avg_word_length"],
-    "Total number of single quotes": ["num_single_quotes"],
-    "Total number of double quotes": ["num_double_quotes"],
-    "Total number of whitespaces": ["num_whitespaces"],
-    "Count of each function word": [f"fn:{word}" for word in F.ENGLISH_STOP_WORDS],
     "Count of each letter": [f"let:{letter}" for letter in string.ascii_letters],
+    # "Total number of parentheses": ["num_parentheses"],
+    # "Total number of emoticons": ["num_emoticons"],
+    # "Total number of no-vowel words": ["num_no_vowel_words"],
+    # "Average word length": ["avg_word_length"],
+    # "Total number of single quotes": ["num_single_quotes"],
+    # "Total number of double quotes": ["num_double_quotes"],
+    # "Total number of whitespaces": ["num_whitespaces"],
     "Count of each POS tag": [f"pos:{tag}" for tag in F.POS_TAGS],
-    # "Count of each phrase":                     [f"{phrase}" for phrase in F.PHRASE.keys()],
+    "Count of each phrase": [f"{phrase}" for phrase in F.PHRASE.keys()],
 }
 
+# %%
+gbc_args = {"n_estimators": 100, "max_depth": 3, "random_state": 42}
+gbc_results = perform_ablation(
+    GradientBoostingClassifier,
+    train_data,
+    dev_data,
+    features.values(),
+    **gbc_args,
+)
+plot_ablation_results(gbc_results, features.keys())
+
+
+# %%
 svc_args = {"kernel": "linear", "C": 1, "random_state": 42}
 svc_results = perform_ablation(
     SVC,
     train_data,
-    test_data,
+    dev_data,
     features.values(),
     **svc_args,
 )
+plot_ablation_results(svc_results, features.keys())
 
-rfc_args = {"max_depth": 30, "n_estimators": 100, "random_state": 42}
+
+# %%
+rfc_args = {"max_depth": 20, "n_estimators": 100, "random_state": 42}
 rfc_results = perform_ablation(
     RandomForestClassifier,
     train_data,
-    test_data,
+    dev_data,
     features.values(),
     **rfc_args,
 )
-
-# %%
-plot_ablation_results(svc_results, features.keys())
 plot_ablation_results(rfc_results, features.keys())

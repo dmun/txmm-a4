@@ -9,18 +9,6 @@ from nltk.chunk import RegexpParser
 from nltk import Tree
 
 
-TOP_K = 1000
-
-
-def get_top_k_words(data, k):
-    all_text = " ".join(data['text'].dropna().astype(str))
-    words = re.findall(r'\b\w+\b', all_text.lower())
-    word_counts = Counter(words)
-    top_k_words = word_counts.most_common(k)
-    return [word for word, _ in top_k_words]
-
-
-# TOP_K_WORDS = get_top_k_words(train_data, TOP_K)
 
 POS_TAGS = [
     'CC', 'CD', 'DT', 'EX', 'FW', 'IN', 'JJ', 'JJR', 'JJS',
@@ -142,12 +130,12 @@ def get_num_phrase(tokens: list[str]):
             phrase_counts[subtree.label()] += 1
     return pd.Series(phrase_counts)
 
-# def get_count_top_k_words(tokens: list[str]):
-#     token_counts = Counter(tokens)
-#     return pd.Series({word: token_counts.get(word, 0) for word in TOP_K_WORDS})
+def get_count_top_k_words(tokens: list[str], TOP_K_WORDS):
+    token_counts = Counter(tokens)
+    return pd.Series({word: token_counts.get(word, 0) for word in TOP_K_WORDS})
 
 
-def extract_features(data: pd.DataFrame):
+def extract_features(data: pd.DataFrame, TOP_K_WORDS):
     df = get_tokenized_data(data)
     df["avg_num_chars_per_token"] = df["tokens"].parallel_apply(get_avg_num_token_chars) # 0.06
     df["num_chars"] = df["text"].parallel_apply(len) #0.059
@@ -171,5 +159,5 @@ def extract_features(data: pd.DataFrame):
     df = pd.concat([df, df["text"].parallel_apply(get_num_letter)], axis=1) #0.627
     df = pd.concat([df, df["tokens"].parallel_apply(get_num_pos_tags)], axis=1) #0.656
     df = pd.concat([df, df["tokens"].parallel_apply(get_num_phrase)], axis=1) #0.090
-    # df = pd.concat([df, df["tokens"].parallel_apply(get_count_top_k_words)], axis=1)
+    df = pd.concat([df, df["tokens"].parallel_apply(get_count_top_k_words, TOP_K_WORDS=TOP_K_WORDS)], axis=1)
     return df.drop(["Unnamed: 0", "text", "tokens", "author"], axis=1).fillna(0)
