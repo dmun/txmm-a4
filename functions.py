@@ -172,4 +172,4 @@ def extract_features(data: pd.DataFrame):
     df = pd.concat([df, df["tokens"].parallel_apply(get_num_pos_tags)], axis=1) #0.656
     df = pd.concat([df, df["tokens"].parallel_apply(get_num_phrase)], axis=1) #0.090
     # df = pd.concat([df, df["tokens"].parallel_apply(get_count_top_k_words)], axis=1)
-    return df.drop(["Unnamed: 0", "text", "tokens", "author"], axis=1)
+    return df.drop(["Unnamed: 0", "text", "tokens", "author"], axis=1).fillna(0)
